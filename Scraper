@@ -1,0 +1,148 @@
+#==============================
+#
+# This notebook scrapes the Stayz website and downloads
+# the pricing and capacity data.
+# Acts as an alternative data source to mainstream data sources
+#
+# Remember to set file path(s)...
+#
+#===============================
+
+import numpy as np
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+from math import floor
+import xlwings as xw
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-whitegrid')
+from scipy.stats import linregress
+from openpyxl import workbook
+import matplotlib
+import sys
+import seaborn as sns
+from scipy import stats
+
+# Dynamically build the URL for location of interest
+
+
+Location = "whitsundays"
+State = "qld"
+#Region =  Not required for this level of analysis
+NumPages = 15
+PageNum = 1
+cont = True
+
+# This is where the Excel file will be saved
+# Set your file path
+wb = xw.Book(r'/Users/trines/Documents/python/stayz/StayzSol49x.xlsx')
+sht = wb.sheets['Sheet1']
+
+while cont:
+
+    url = "https://www.stayz.com.au/accommodation/" + str(State) + "/" + str(Location) + "?page=" + str(PageNum)
+    PageNum += 1
+
+# Spoof some headers so the request appears to be coming from a browser
+    headers = {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5)",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-charset": "ISO-8859-1,utf-8;q=0.7,*;q=0.3",
+        "accept-encoding": "gzip,deflate,sdch",
+        "accept-language": "en-US,en;q=0.8",
+    }
+
+# Make the request to the search url, passing in the the spoofed headers; assign the response to a variable r
+    r = requests.get(url, headers=headers)
+
+# Check the status code of the response to make sure the request went well
+    if r.status_code != 200:
+        print("Request denied")
+        break
+
+    soup = BeautifulSoup(r.text, "lxml")
+
+# Create lists, parse, and compile
+    results_PropCount = []
+    results_ListLocation = []
+    results_ListPrice = []
+    results_ListFacility = []
+    results_ListRating = []
+    results_ListReviews = []
+
+    for results in soup.find_all("span", {"class": "u-text--muted"}):
+        results_PropCount.append(results.string)
+
+    for results in soup.findAll("p", {"class": "u-spacing--flush u-hidden--palm"}):
+        results_ListLocation.append(results.string)
+        results_ListLocationA = [x.strip('\n') for x in results_ListLocation]
+        results_ListLocationB = results_ListLocationA
+        results_ListLocation = [x.strip(' ') for x in results_ListLocationB]
+
+    for results in soup.findAll("span", {"class": "c-property-tile__price"}):
+        results_ListPrice.append(results.string)
+    results_ListPrice_cull = np.array(results_ListPrice[1::2])
+
+    for results in soup.findAll("span", {"class": "c-property-tile__facet-count"}):
+        results_ListFacility.append(results.string)
+    Data = [results_ListFacility[x:x+4] for x in range(0, len(results_ListFacility), 4)]
+
+    print(results_PropCount)
+    print(results_ListLocation)
+    print(results_ListPrice_cull)
+    print(Data)
+    #print(results_ListFacility)
+    #print(results_ListRating)
+    #rprint(results_ListReviews)
+
+# Write to XLS file for analysis of data set for policy analyst
+
+    pages = [Location + str(PageNum)]
+
+    for page in pages:
+        print("*****Starting - " + page + " ********")
+        sht.range("A1").value = ["Location", "Price", "Guests", "Bedrooms", "Beds", "Bathrooms"]
+
+        for i, r in enumerate(results_ListLocation):
+            sht.range((i + 2 + PageNum * 50 - 100, 1)).value = r
+        for i, r in enumerate(results_ListPrice_cull):
+            sht.range((i + 2 + PageNum * 50 - 100, 2)).value = r
+        for i, r in enumerate(Data):
+            sht.range((floor(i) + 2 + PageNum * 50 - 100, i % 1 + 3)).value = r
+
+wb.save(r'/Users/trines/Documents/python/stayz/StayzSol49x.xlsx')
+
+# Undertake basic analysis of guests * capacity
+
+dfRaw = pd.ExcelFile(r'/Users/trines/Documents/python/stayz/StayzSol49x.xlsx')
+df = dfRaw.parse("Sheet1")
+dfAnalysis = df[['Price', 'Bedrooms', 'Guests']]
+Price = dfAnalysis[['Price']]
+Bedrooms = dfAnalysis[['Bedrooms']]
+Guests = dfAnalysis[['Guests']]
+
+# Linear regression calculations
+slope, intercept, rvalue, pvalue, stderr = linregress(df['Guests'], df['Bedrooms'])
+# Slope, # Rsq, # Pval
+print('Slope'); print(round(slope, 3));
+print('R-sq'); print(round(rvalue, 3));
+print('P-Value'); print(round(pvalue, 3))
+
+# Basic plots for viz
+plt.plot(Guests, Bedrooms, 'o', color = 'black');
+plt.xlabel('Guests'); plt.ylabel('Bedrooms');
+plt.title('Guests versus Bedrooms', fontsize = 20)
+plt.text(s="Slope " + str(round(slope, 3)),
+         x = 0 + (max(df['Guests'])-min(df['Guests']))*0.1,
+         y = max(df['Bedrooms']) - (max(df['Bedrooms']) - min(df['Bedrooms']))*0.25,
+         fontsize = 15, color = 'red')
+plt.show()
+
+plt.plot(Price, Bedrooms, 'o', color = 'red');
+plt.xlabel('Price, ($)'); plt.ylabel('Bedrooms');
+plt.title('Price versus Bedrooms', fontsize = 20)
+plt.text(s="Slope " + str(round(slope, 3)),
+         x = 0 + (max(df['Price'])-min(df['Price']))*0.1,
+         y = max(df['Bedrooms']) - (max(df['Bedrooms']) - min(df['Bedrooms']))*0.25,
+         fontsize = 15, color = 'red')
+plt.show()
