@@ -1,4 +1,4 @@
-# An-alternative-source
+# An-alternative-accommodation-data-source 
 - Web scraping and related analytics using Python tools
 - Extracting data from an alternative source to assess changes in the accommodation sector
 - Web scraping proving that there are alternative ways to extract accommodation sector data
